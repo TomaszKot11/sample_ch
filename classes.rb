@@ -17,14 +17,46 @@ end
 
 class Product < ApplicationRecord
   belongs_to :article
-  belongs_to :delivery_condition
+  belongs_to :delivery_condition 
 
+  # I propably don't have enough domain knowledge 
+  # This comments are only for clarifying my solution
+  #  I made some assumptions:
+  # 1. By 'defined' I assume active flag set to true was meant -> because no optional: true is set 
+  # on the associations in article and product model + what is a purpose of belongs_to association
+  # 2. I think there is a gross redundancy of data causing problems
   def delivery_description(country_code)
-    # assuming name column in the countries table + because of the usage of a paper trail gem
-    country_delivery_newest_cond = Country.find_by!(name: country_name).delivery_conditions.versions.last
+    # error(exception) handlig by convetion on the higher level of abstraction (reason I use ! methods)
+    # to fetch once - performance/define vars at the beginning on the method
+    # I assume there is a one-to-many-relation between the Country and the DeliveryCondition
+    # and each country has the record in countries table + there is a name column there
+    country_delivery_cond = Country.find_by!(name: country_code).delivery_conditions 
+    country_product_cond = country_delivery_cond.find_first { |el| el.products.include?(self) }
+    country_article_cond = country_delivery_cond.find_first { |el| el.articles.include?(self.article) }
+    is_article_cond = country_article_cond.active? # var names can't have ? sufix
+    is_product_cond = country_product_cond.active?
 
-    # format of the example de.yml string delivery description %{down_boundary} bis %{upper_boundary} Tage
-    I18n.t('product.delivery', down_boundary: x_days, upper_boundary: y_days)
+    if is_article_cond && is_product_cond
+      return build_delivery_description(product_delivery)
+    elsif is_article_cond
+      return build_delivery_description(article_delivery)
+    elsif is_product_cond
+      return build_delivery_description(product_delivery)
+    end
+
+    raise Error, 'No data for given country' # I18n should be used
+  end
+
+  private 
+
+  # I assume this is a concat of the I18n str from delivery_condition record 
+  # and the sufix from the task
+  def build_delivery_description(delivery_condition)
+    # here we can use Rails defaul I18n 
+    # in e.g format for en.yml from %{min_days} to %{max_days}
+    sufix_delivery_desc = I18n.t('delivery.condition.description.sufx', min_days: delivery_condition.min_days, max_days: delivery_condition.max_days)
+    basic_string = delivery_condition.operate_i18n(:delivery_description)
+    basic_string + ' ' + sufix_delivery_desc
   end
 end
 
